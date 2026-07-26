@@ -1,5 +1,9 @@
+// ignore_for_file: deprecated_member_use, avoid_web_libraries_in_flutter
+// dart:html is used deliberately: this project targets web only, and
+// dart:html ships with the Dart SDK itself rather than needing a pub
+// package fetch (see README/commit history for why that matters here).
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:html' as html;
 
 /// One row of the persistent trait log. This is what turns "systematically
 /// build four traits" from a slogan into something reviewable weekly or
@@ -37,27 +41,29 @@ class TraitLogEntry {
       );
 }
 
-/// Appends one entry per turn to local, on-device storage (SharedPreferences,
-/// which backs onto localStorage on web and native prefs storage on
-/// mobile/desktop -- chosen over path_provider/dart:io File so this works
-/// on the web target, since browsers have no filesystem access).
+/// Appends one entry per turn to the browser's localStorage via dart:html --
+/// this project targets web only (see README), and dart:html ships with the
+/// Dart SDK itself rather than needing a separate pub package fetch.
 /// No viewer UI yet (see README "Known gaps") -- this just makes sure the
 /// data exists to build one on top of later.
 class TraitLogService {
   static const _key = 'trait_log_entries';
 
   Future<void> append(TraitLogEntry entry) async {
-    final prefs = await SharedPreferences.getInstance();
-    final entries = prefs.getStringList(_key) ?? [];
+    final entries = _readRaw();
     entries.add(jsonEncode(entry.toJson()));
-    await prefs.setStringList(_key, entries);
+    html.window.localStorage[_key] = jsonEncode(entries);
   }
 
   Future<List<TraitLogEntry>> readAll() async {
-    final prefs = await SharedPreferences.getInstance();
-    final entries = prefs.getStringList(_key) ?? [];
-    return entries
+    return _readRaw()
         .map((e) => TraitLogEntry.fromJson(jsonDecode(e) as Map<String, dynamic>))
         .toList();
+  }
+
+  List<String> _readRaw() {
+    final raw = html.window.localStorage[_key];
+    if (raw == null) return [];
+    return (jsonDecode(raw) as List<dynamic>).cast<String>();
   }
 }
