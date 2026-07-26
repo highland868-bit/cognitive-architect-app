@@ -30,7 +30,7 @@ class ClaudeService {
       },
       body: jsonEncode({
         'model': _model,
-        'max_tokens': 400,
+        'max_tokens': 1024,
         'system': cognitiveArchitectSystemPrompt,
         'messages': [
           {'role': 'user', 'content': userInput}
