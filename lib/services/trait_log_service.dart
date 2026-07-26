@@ -1,6 +1,5 @@
 import 'dart:convert';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// One row of the persistent trait log. This is what turns "systematically
 /// build four traits" from a slogan into something reviewable weekly or
@@ -38,32 +37,27 @@ class TraitLogEntry {
       );
 }
 
-/// Appends one line of JSON per turn to a local file, on-device only.
+/// Appends one entry per turn to local, on-device storage (SharedPreferences,
+/// which backs onto localStorage on web and native prefs storage on
+/// mobile/desktop -- chosen over path_provider/dart:io File so this works
+/// on the web target, since browsers have no filesystem access).
 /// No viewer UI yet (see README "Known gaps") -- this just makes sure the
 /// data exists to build one on top of later.
 class TraitLogService {
-  Future<File> _logFile() async {
-    final dir = await getApplicationDocumentsDirectory();
-    return File('${dir.path}/trait_log.jsonl');
-  }
+  static const _key = 'trait_log_entries';
 
   Future<void> append(TraitLogEntry entry) async {
-    final file = await _logFile();
-    await file.writeAsString(
-      '${jsonEncode(entry.toJson())}\n',
-      mode: FileMode.append,
-      flush: true,
-    );
+    final prefs = await SharedPreferences.getInstance();
+    final entries = prefs.getStringList(_key) ?? [];
+    entries.add(jsonEncode(entry.toJson()));
+    await prefs.setStringList(_key, entries);
   }
 
   Future<List<TraitLogEntry>> readAll() async {
-    final file = await _logFile();
-    if (!await file.exists()) return [];
-    final lines = await file.readAsLines();
-    return lines
-        .where((l) => l.trim().isNotEmpty)
-        .map((l) => TraitLogEntry.fromJson(
-            jsonDecode(l) as Map<String, dynamic>))
+    final prefs = await SharedPreferences.getInstance();
+    final entries = prefs.getStringList(_key) ?? [];
+    return entries
+        .map((e) => TraitLogEntry.fromJson(jsonDecode(e) as Map<String, dynamic>))
         .toList();
   }
 }

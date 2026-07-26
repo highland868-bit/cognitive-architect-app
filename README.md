@@ -37,7 +37,8 @@ just setup steps.
   JSON response.
 - `lib/services/tts_service.dart` -- on-device text-to-speech.
 - `lib/services/trait_log_service.dart` -- appends each turn to a local
-  JSON-lines trait log (`trait_log.jsonl` in the app's documents dir).
+  trait log stored via SharedPreferences (localStorage on web, native
+  prefs storage on mobile/desktop).
 - `lib/widgets/avatar_view.dart` -- swaps the Lottie file by
   avatar_state.
 - `lib/widgets/breathing_pacer.dart` -- native, deterministic

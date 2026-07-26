@@ -44,6 +44,3 @@ app.*.map.json
 
 # Never commit secrets
 *.env
-
-# Personal data generated at runtime (trait log, etc.)
-trait_log.jsonl
