@@ -104,7 +104,7 @@ class _BreathingPacerState extends State<BreathingPacer>
                 height: 140,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.blueGrey.withOpacity(0.4),
+                  color: Colors.blueGrey.withValues(alpha: 0.4),
                 ),
               ),
             );
