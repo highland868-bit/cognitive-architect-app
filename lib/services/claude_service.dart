@@ -45,7 +45,14 @@ class ClaudeService {
     }
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
-    final text = data['content'][0]['text'] as String;
+    final content = data['content'] as List<dynamic>;
+    final textBlock = content.firstWhere(
+      (block) => block['type'] == 'text',
+      orElse: () => throw Exception(
+        'No text block in Claude response: ${response.body}',
+      ),
+    );
+    final text = textBlock['text'] as String;
     final parsed = jsonDecode(text) as Map<String, dynamic>;
     return AgentResponse.fromJson(parsed);
   }
