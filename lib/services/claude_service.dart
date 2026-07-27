@@ -2,29 +2,27 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/agent_response.dart';
 import '../system_prompt.dart';
+import 'api_key_service.dart';
 
 /// Calls the Claude API directly (not claude.ai) and parses the JSON
-/// response into an AgentResponse. Requires ANTHROPIC_API_KEY to be
-/// passed at build/run time -- see README for --dart-define usage.
-/// Never hardcode the key here.
+/// response into an AgentResponse. Reads the API key from ApiKeyService
+/// (this browser's localStorage) rather than a compile-time --dart-define,
+/// since this build is meant to be hosted publicly -- see ApiKeyService.
 class ClaudeService {
-  static const _apiKey = String.fromEnvironment('ANTHROPIC_API_KEY');
   static const _endpoint = 'https://api.anthropic.com/v1/messages';
   static const _model = 'claude-sonnet-5';
 
   Future<AgentResponse> send(String userInput) async {
-    if (_apiKey.isEmpty) {
-      throw StateError(
-        'ANTHROPIC_API_KEY not set. Run with '
-        '--dart-define=ANTHROPIC_API_KEY=your_key',
-      );
+    final apiKey = ApiKeyService.get();
+    if (apiKey == null || apiKey.isEmpty) {
+      throw StateError('No API key saved. Set it from the key icon in the app bar.');
     }
 
     final response = await http.post(
       Uri.parse(_endpoint),
       headers: {
         'content-type': 'application/json',
-        'x-api-key': _apiKey,
+        'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
       },

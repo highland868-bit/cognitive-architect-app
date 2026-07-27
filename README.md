@@ -18,10 +18,18 @@ just setup steps.
    the Claude API directly (not claude.ai), so usage is billed per the
    API's current pricing -- for personal journaling volume this should
    be low, but worth checking current rates before heavy use.
-5. Run the app with your key passed in, never hardcoded or committed:
+5. Just run the app -- no `--dart-define` needed:
    ```
-   flutter run --dart-define=ANTHROPIC_API_KEY=your_key_here
+   flutter run -d chrome
    ```
+   The first launch shows a one-time screen asking for your API key. It's
+   saved only in that browser's localStorage, never compiled into the
+   build. This matters because this app is meant to be hosted somewhere
+   public (e.g. GitHub Pages) so it's reachable from a phone -- and on a
+   free hosting plan, publicly-served files are publicly viewable by URL
+   even from a private repo. Baking the key in at build time would leak
+   it to anyone who found the link. Update the key later via the key icon
+   in the app bar.
 
 ## Structure
 
@@ -32,7 +40,11 @@ just setup steps.
   is the backstop that runs even if the model call fails or SENTINEL
   misses something.
 - `lib/services/claude_service.dart` -- calls the Claude API, parses the
-  JSON response.
+  JSON response. Reads the key from ApiKeyService, never a compile-time
+  define (see below).
+- `lib/services/api_key_service.dart` / `lib/screens/api_key_screen.dart`
+  -- one-time (or later, via the app bar key icon) entry of the user's
+  own API key, stored in this browser's localStorage only.
 - `lib/services/tts_service.dart` -- on-device text-to-speech.
 - `lib/services/trait_log_service.dart` -- appends each turn to a local
   trait log stored via dart:html's localStorage (this project targets

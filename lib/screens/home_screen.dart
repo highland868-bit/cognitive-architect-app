@@ -6,6 +6,7 @@ import '../services/tts_service.dart';
 import '../services/trait_log_service.dart';
 import '../widgets/avatar_view.dart';
 import '../widgets/breathing_pacer.dart';
+import 'api_key_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -76,7 +77,20 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final response = _lastResponse;
     return Scaffold(
-      appBar: AppBar(title: const Text('Cognitive Architect')),
+      appBar: AppBar(
+        title: const Text('Cognitive Architect'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.key),
+            tooltip: 'Update API key',
+            onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => ApiKeyScreen(onSaved: () => Navigator.of(context).pop()),
+              ));
+            },
+          ),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
