@@ -10,12 +10,10 @@ just setup steps.
 1. Install the Flutter SDK (flutter.dev) if you haven't already, and run
    `flutter doctor` to confirm your setup.
 2. From this folder, run `flutter pub get`.
-3. Download the 4 Lottie files listed in the master plan's "LOTTIE
-   ASSETS" section and place them in `assets/animations/` as:
-   - `character.json`
-   - `breathing.json`
-   - `reflective.json`
-   - `crisis.json`
+3. `assets/animations/breathing.json` is the real "Breathe Babo" Lottie
+   clip, used only for the BREATHING state (see Structure below). Every
+   other avatar state is drawn natively in code -- no other Lottie files
+   are needed.
 4. Get an Anthropic API key from console.anthropic.com. This app calls
    the Claude API directly (not claude.ai), so usage is billed per the
    API's current pricing -- for personal journaling volume this should
@@ -37,12 +35,17 @@ just setup steps.
   JSON response.
 - `lib/services/tts_service.dart` -- on-device text-to-speech.
 - `lib/services/trait_log_service.dart` -- appends each turn to a local
-  trait log stored via SharedPreferences (localStorage on web, native
-  prefs storage on mobile/desktop).
-- `lib/widgets/avatar_view.dart` -- swaps the Lottie file by
-  avatar_state.
+  trait log stored via dart:html's localStorage (this project targets
+  web only, so no separate pub package is needed for this).
+- `lib/widgets/native_avatar.dart` -- the single, code-drawn "mood"
+  avatar used for every avatar_state except BREATHING. One widget,
+  parameterized by state, so the visual language stays consistent
+  without needing a separate asset per state.
+- `lib/widgets/avatar_view.dart` -- thin wrapper around NativeAvatar.
 - `lib/widgets/breathing_pacer.dart` -- native, deterministic
-  breath-count pacer; this is the actual timer, not the Lottie clip.
+  breath-count pacer; this is the actual timer. The "Breathe Babo"
+  Lottie clip plays alongside it as mood/visual only, looping
+  independently -- it never drives the timing.
 - `lib/screens/home_screen.dart` -- ties it all together: text input,
   crisis backstop check, Claude call, avatar/pacer display, TTS, logging.
 - `lib/main.dart` -- entry point.
@@ -50,7 +53,7 @@ just setup steps.
 ## Known gaps / next steps
 
 - Trait log has no viewer UI yet -- currently just accumulates in
-  `trait_log.jsonl`. A simple screen to chart trait_target frequency
+  browser localStorage. A simple screen to chart trait_target frequency
   over time would be the next high-value addition.
 - No voice-note input (speech-to-text) -- text only for now. The
   `speech_to_text` package would be the natural add.

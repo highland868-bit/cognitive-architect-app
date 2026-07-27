@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:lottie/lottie.dart';
 
 /// Native, deterministic breath pacer. Per the master plan: pacing must
 /// never be driven by model-generated text timing. This widget owns the
 /// actual inhale/hold/exhale counts, keyed off breath_pattern from the
-/// agent response; the Lottie clip playing alongside it is mood, not the
-/// timer.
+/// agent response; the "Breathe Babo" Lottie clip playing alongside it
+/// loops independently as mood/visual only -- it is never the timer.
 class BreathingPacer extends StatefulWidget {
   final String pattern; // '478' | '436' | 'box'
 
@@ -81,34 +82,13 @@ class _BreathingPacerState extends State<BreathingPacer>
   @override
   Widget build(BuildContext context) {
     final phase = _phases[_phaseIndex];
-    final isInhale = phase.label == 'Inhale';
-    final isExhale = phase.label == 'Exhale';
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            double scale;
-            if (isInhale) {
-              scale = 0.6 + 0.4 * _controller.value;
-            } else if (isExhale) {
-              scale = 1.0 - 0.4 * _controller.value;
-            } else {
-              scale = 1.0; // hold
-            }
-            return Transform.scale(
-              scale: scale,
-              child: Container(
-                width: 140,
-                height: 140,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.blueGrey.withValues(alpha: 0.4),
-                ),
-              ),
-            );
-          },
+        SizedBox(
+          width: 160,
+          height: 200,
+          child: Lottie.asset('assets/animations/breathing.json', repeat: true, fit: BoxFit.contain),
         ),
         const SizedBox(height: 16),
         Text(phase.label, style: const TextStyle(fontSize: 20)),
