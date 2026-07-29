@@ -4,6 +4,7 @@ import '../services/claude_service.dart';
 import '../services/crisis_backstop.dart';
 import '../services/tts_service.dart';
 import '../services/trait_log_service.dart';
+import '../widgets/agent_drawer.dart';
 import '../widgets/avatar_view.dart';
 import '../widgets/breathing_pacer.dart';
 import 'api_key_screen.dart';
@@ -24,6 +25,7 @@ class _HomeScreenState extends State<HomeScreen> {
   AgentResponse? _lastResponse;
   bool _loading = false;
   String? _crisisMessage;
+  String? _selectedAgent;
 
   Future<void> _submit() async {
     final input = _controller.text.trim();
@@ -46,7 +48,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      final result = await _claude.send(input);
+      final result = await _claude.send(input, forcedAgent: _selectedAgent);
 
       if (result.crisisFlag) {
         setState(() {
@@ -76,9 +78,31 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final response = _lastResponse;
+    final modeLabel = _selectedAgent == null
+        ? 'Auto'
+        : agentOptions.firstWhere((a) => a.id == _selectedAgent).label;
     return Scaffold(
+      drawer: AgentDrawer(
+        selectedAgent: _selectedAgent,
+        onSelect: (agent) {
+          setState(() => _selectedAgent = agent);
+          Navigator.of(context).pop();
+        },
+      ),
       appBar: AppBar(
-        title: const Text('Cognitive Architect'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Cognitive Architect'),
+            Text(
+              'Mode: $modeLabel',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.key),
