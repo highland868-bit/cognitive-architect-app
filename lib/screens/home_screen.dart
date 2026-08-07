@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import '../models/agent_response.dart';
 import '../services/claude_service.dart';
+import '../services/conversation_log_service.dart';
 import '../services/crisis_backstop.dart';
 import '../services/tts_service.dart';
 import '../services/trait_log_service.dart';
+import '../services/voice_pref_service.dart';
 import '../widgets/agent_drawer.dart';
 import '../widgets/avatar_view.dart';
 import '../widgets/breathing_pacer.dart';
 import 'api_key_screen.dart';
+import 'history_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,15 +24,23 @@ class _HomeScreenState extends State<HomeScreen> {
   final _claude = ClaudeService();
   final _tts = TtsService();
   final _traitLog = TraitLogService();
+  final _conversationLog = ConversationLogService();
 
   AgentResponse? _lastResponse;
   bool _loading = false;
   String? _crisisMessage;
   String? _selectedAgent;
+  bool _voiceEnabled = VoicePrefService.get();
+
+  String? get _displayText => _crisisMessage ?? _lastResponse?.responseText;
 
   Future<void> _submit() async {
     final input = _controller.text.trim();
     if (input.isEmpty) return;
+
+    await _conversationLog.append(
+      ConversationEntry(timestamp: DateTime.now(), role: 'user', text: input),
+    );
 
     // Deterministic safety net runs first, independent of the model.
     if (CrisisBackstop.check(input)) {
@@ -37,7 +48,12 @@ class _HomeScreenState extends State<HomeScreen> {
         _crisisMessage = CrisisBackstop.resourceMessage;
         _lastResponse = null;
       });
-      await _tts.speak(CrisisBackstop.resourceMessage);
+      await _conversationLog.append(ConversationEntry(
+        timestamp: DateTime.now(),
+        role: 'assistant',
+        text: CrisisBackstop.resourceMessage,
+        agent: 'SENTINEL',
+      ));
       _controller.clear();
       return;
     }
@@ -55,10 +71,20 @@ class _HomeScreenState extends State<HomeScreen> {
           _crisisMessage = CrisisBackstop.resourceMessage;
           _lastResponse = null;
         });
-        await _tts.speak(CrisisBackstop.resourceMessage);
+        await _conversationLog.append(ConversationEntry(
+          timestamp: DateTime.now(),
+          role: 'assistant',
+          text: CrisisBackstop.resourceMessage,
+          agent: 'SENTINEL',
+        ));
       } else {
         setState(() => _lastResponse = result);
-        await _tts.speak(result.responseText);
+        await _conversationLog.append(ConversationEntry(
+          timestamp: DateTime.now(),
+          role: 'assistant',
+          text: result.responseText,
+          agent: result.agent,
+        ));
         await _traitLog.append(TraitLogEntry(
           timestamp: DateTime.now(),
           agent: result.agent,
@@ -105,6 +131,23 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         actions: [
           IconButton(
+            icon: Icon(_voiceEnabled ? Icons.volume_up : Icons.volume_off),
+            tooltip: _voiceEnabled ? 'Voice on' : 'Voice off',
+            onPressed: () {
+              setState(() => _voiceEnabled = !_voiceEnabled);
+              VoicePrefService.set(_voiceEnabled);
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'Conversation history',
+            onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const HistoryScreen(),
+              ));
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.key),
             tooltip: 'Update API key',
             onPressed: () {
@@ -120,32 +163,57 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           children: [
             Expanded(
-              child: Center(
-                child: _crisisMessage != null
-                    ? Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Text(
-                          _crisisMessage!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 16),
-                        ),
-                      )
-                    : response == null
-                        ? const AvatarView(avatarState: 'IDLE')
-                        : Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (response.avatarState == 'BREATHING')
-                                BreathingPacer(pattern: response.breathPattern)
-                              else
-                                AvatarView(avatarState: response.avatarState),
-                              const SizedBox(height: 16),
-                              Text(response.responseText,
-                                  textAlign: TextAlign.center),
-                            ],
-                          ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // Centers short replies, but scrolls instead of
+                  // overflowing once the avatar/breathing pacer plus
+                  // response text is taller than the available space.
+                  return SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                      child: Center(
+                        child: _crisisMessage != null
+                            ? Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Text(
+                                  _crisisMessage!,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(fontSize: 16),
+                                ),
+                              )
+                            : response == null
+                                ? const AvatarView(avatarState: 'IDLE')
+                                : Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (response.avatarState == 'BREATHING')
+                                          BreathingPacer(pattern: response.breathPattern)
+                                        else
+                                          AvatarView(avatarState: response.avatarState),
+                                        const SizedBox(height: 16),
+                                        Text(response.responseText,
+                                            textAlign: TextAlign.center),
+                                      ],
+                                    ),
+                                  ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
+            // Manual tap rather than auto-play: iOS Safari only allows
+            // speech synthesis triggered directly by a user gesture, and
+            // the reply text above always arrives after an async network
+            // call, which no longer counts as one.
+            if (_voiceEnabled && _displayText != null)
+              TextButton.icon(
+                onPressed: () => _tts.speak(_displayText!),
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('Play'),
+              ),
             if (_loading) const CircularProgressIndicator(),
             const SizedBox(height: 12),
             TextField(
