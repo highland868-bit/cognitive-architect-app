@@ -2,19 +2,6 @@ import 'package:flutter/material.dart';
 import '../services/conversation_log_service.dart';
 import '../widgets/agent_drawer.dart';
 
-/// One user message paired with the reply that followed it (if any),
-/// tagged with the agent that actually answered -- this is what lets the
-/// history screen group turns by drawer topic instead of one flat list.
-class _Turn {
-  final ConversationEntry user;
-  final ConversationEntry? assistant;
-  final String? agent;
-
-  _Turn({required this.user, this.assistant, this.agent});
-
-  DateTime get timestamp => (assistant ?? user).timestamp;
-}
-
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
 
@@ -26,34 +13,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
   final _log = ConversationLogService();
   late final Future<List<ConversationEntry>> _entries = _log.readAll();
 
-  List<_Turn> _pairTurns(List<ConversationEntry> entries) {
-    final turns = <_Turn>[];
-    var i = 0;
-    while (i < entries.length) {
-      final entry = entries[i];
-      if (entry.role == 'user') {
-        final next = i + 1 < entries.length ? entries[i + 1] : null;
-        if (next != null && next.role == 'assistant') {
-          turns.add(_Turn(user: entry, assistant: next, agent: next.agent));
-          i += 2;
-        } else {
-          turns.add(_Turn(user: entry));
-          i += 1;
-        }
-      } else {
-        // Orphaned assistant entry (shouldn't normally happen) -- keep it
-        // visible rather than silently dropping it.
-        turns.add(_Turn(user: entry, agent: entry.agent));
-        i += 1;
-      }
-    }
-    return turns;
-  }
-
   /// Groups turns by drawer topic, ordered by which topic was most
   /// recently active.
-  List<MapEntry<String?, List<_Turn>>> _groupByAgent(List<_Turn> turns) {
-    final groups = <String?, List<_Turn>>{};
+  List<MapEntry<String?, List<ConversationTurn>>> _groupByAgent(List<ConversationTurn> turns) {
+    final groups = <String?, List<ConversationTurn>>{};
     for (final turn in turns) {
       groups.putIfAbsent(turn.agent, () => []).add(turn);
     }
@@ -94,7 +57,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           if (entries.isEmpty) {
             return const Center(child: Text('No conversations yet.'));
           }
-          final groups = _groupByAgent(_pairTurns(entries));
+          final groups = _groupByAgent(_log.pairTurns(entries));
           return ListView.builder(
             padding: const EdgeInsets.symmetric(vertical: 8),
             itemCount: groups.length,
@@ -122,7 +85,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
 class _TurnTile extends StatelessWidget {
   const _TurnTile({required this.turn});
 
-  final _Turn turn;
+  final ConversationTurn turn;
 
   @override
   Widget build(BuildContext context) {
@@ -131,7 +94,8 @@ class _TurnTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _Bubble(role: 'You', text: turn.user.text, timestamp: turn.user.timestamp, alignRight: true),
+          if (turn.user != null)
+            _Bubble(role: 'You', text: turn.user!.text, timestamp: turn.user!.timestamp, alignRight: true),
           if (turn.assistant != null)
             _Bubble(
               role: _labelFor(turn.assistant!.agent),

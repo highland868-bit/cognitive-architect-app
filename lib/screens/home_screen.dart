@@ -11,6 +11,7 @@ import '../widgets/avatar_view.dart';
 import '../widgets/breathing_pacer.dart';
 import 'api_key_screen.dart';
 import 'history_screen.dart';
+import 'voice_settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -33,6 +34,36 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _voiceEnabled = VoicePrefService.get();
 
   String? get _displayText => _crisisMessage ?? _lastResponse?.responseText;
+
+  /// Switching topics shows that topic's own last exchange if it has one,
+  /// rather than always resetting to idle -- otherwise every topic looked
+  /// "gone" the moment you left it, even though it was safe in storage.
+  Future<void> _switchTopic(String? agent) async {
+    setState(() {
+      _selectedAgent = agent;
+      _lastResponse = null;
+      _crisisMessage = null;
+    });
+    if (agent == null) return; // Auto mode: always a fresh check-in.
+
+    final turns = await _conversationLog.turnsForAgent(agent);
+    final lastReply = turns.isEmpty ? null : turns.last.assistant;
+    if (lastReply == null) return;
+    if (!mounted || _selectedAgent != agent) return; // user moved on already
+
+    setState(() {
+      _lastResponse = AgentResponse(
+        agent: agent,
+        avatarState: lastReply.avatarState ?? 'IDLE',
+        breathPattern: lastReply.breathPattern ?? 'none',
+        technique: 'none',
+        crisisFlag: false,
+        traitTarget: 'none',
+        responseText: lastReply.text,
+        logEntry: '',
+      );
+    });
+  }
 
   Future<void> _submit() async {
     final input = _controller.text.trim();
@@ -64,7 +95,12 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      final result = await _claude.send(input, forcedAgent: _selectedAgent);
+      // Auto mode stays a fresh, read-the-moment check-in every time; a
+      // deliberately chosen agent continues that topic's prior turns.
+      final history = _selectedAgent == null
+          ? const <ConversationTurn>[]
+          : await _conversationLog.turnsForAgent(_selectedAgent!);
+      final result = await _claude.send(input, forcedAgent: _selectedAgent, history: history);
 
       if (result.crisisFlag) {
         setState(() {
@@ -79,11 +115,19 @@ class _HomeScreenState extends State<HomeScreen> {
         ));
       } else {
         setState(() => _lastResponse = result);
+        // Keyed by the topic the user actually picked, when they picked
+        // one -- not by whatever agent the model itself self-reported,
+        // which the model doesn't always echo back exactly, and a
+        // mismatch would silently break the next turn's history lookup
+        // in ConversationLogService.turnsForAgent. Auto mode has no user
+        // pick to anchor to, so it still uses the model's own routing.
         await _conversationLog.append(ConversationEntry(
           timestamp: DateTime.now(),
           role: 'assistant',
           text: result.responseText,
-          agent: result.agent,
+          agent: _selectedAgent ?? result.agent,
+          avatarState: result.avatarState,
+          breathPattern: result.breathPattern,
         ));
         await _traitLog.append(TraitLogEntry(
           timestamp: DateTime.now(),
@@ -111,8 +155,8 @@ class _HomeScreenState extends State<HomeScreen> {
       drawer: AgentDrawer(
         selectedAgent: _selectedAgent,
         onSelect: (agent) {
-          setState(() => _selectedAgent = agent);
           Navigator.of(context).pop();
+          _switchTopic(agent);
         },
       ),
       appBar: AppBar(
@@ -136,6 +180,15 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () {
               setState(() => _voiceEnabled = !_voiceEnabled);
               VoicePrefService.set(_voiceEnabled);
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.record_voice_over),
+            tooltip: 'Choose voice',
+            onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => VoiceSettingsScreen(tts: _tts),
+              ));
             },
           ),
           IconButton(

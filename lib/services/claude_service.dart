@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/agent_response.dart';
 import '../system_prompt.dart';
 import 'api_key_service.dart';
+import 'conversation_log_service.dart';
 
 /// Calls the Claude API directly (not claude.ai) and parses the JSON
 /// response into an AgentResponse. Reads the API key from ApiKeyService
@@ -19,7 +20,17 @@ class ClaudeService {
   /// SENTINEL's crisis check (part of that one prompt, plus the separate
   /// deterministic CrisisBackstop that runs before this is ever called)
   /// still applies no matter what's picked.
-  Future<AgentResponse> send(String userInput, {String? forcedAgent}) async {
+  /// [history], if given, is that topic's prior turns (oldest first) --
+  /// replayed as real conversation context so picking an agent from the
+  /// drawer continues that thread instead of starting fresh each time.
+  /// Each assistant turn is replayed as its plain response_text, not the
+  /// raw structured JSON it originally returned -- the model only needs
+  /// the substance of what it said before, not its own past envelope.
+  Future<AgentResponse> send(
+    String userInput, {
+    String? forcedAgent,
+    List<ConversationTurn> history = const [],
+  }) async {
     final apiKey = ApiKeyService.get();
     if (apiKey == null || apiKey.isEmpty) {
       throw StateError('No API key saved. Set it from the key icon in the app bar.');
@@ -31,6 +42,17 @@ class ClaudeService {
             'turn from a menu. Honor that choice and route directly to it, '
             'unless SENTINEL crisis criteria are met, in which case SENTINEL '
             'still takes priority as usual.]\n\n$userInput';
+
+    final messages = <Map<String, String>>[];
+    for (final turn in history) {
+      if (turn.user != null) {
+        messages.add({'role': 'user', 'content': turn.user!.text});
+      }
+      if (turn.assistant != null) {
+        messages.add({'role': 'assistant', 'content': turn.assistant!.text});
+      }
+    }
+    messages.add({'role': 'user', 'content': messageContent});
 
     final response = await http.post(
       Uri.parse(_endpoint),
@@ -44,9 +66,7 @@ class ClaudeService {
         'model': _model,
         'max_tokens': 1024,
         'system': cognitiveArchitectSystemPrompt,
-        'messages': [
-          {'role': 'user', 'content': messageContent}
-        ],
+        'messages': messages,
       }),
     );
 
