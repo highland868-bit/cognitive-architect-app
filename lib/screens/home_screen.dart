@@ -30,6 +30,7 @@ class _HomeScreenState extends State<HomeScreen> {
   AgentResponse? _lastResponse;
   bool _loading = false;
   String? _crisisMessage;
+  String? _lastUserText;
   String? _selectedAgent;
   bool _voiceEnabled = VoicePrefService.get();
 
@@ -43,15 +44,18 @@ class _HomeScreenState extends State<HomeScreen> {
       _selectedAgent = agent;
       _lastResponse = null;
       _crisisMessage = null;
+      _lastUserText = null;
     });
     if (agent == null) return; // Auto mode: always a fresh check-in.
 
     final turns = await _conversationLog.turnsForAgent(agent);
-    final lastReply = turns.isEmpty ? null : turns.last.assistant;
+    final lastTurn = turns.isEmpty ? null : turns.last;
+    final lastReply = lastTurn?.assistant;
     if (lastReply == null) return;
     if (!mounted || _selectedAgent != agent) return; // user moved on already
 
     setState(() {
+      _lastUserText = lastTurn?.user?.text;
       _lastResponse = AgentResponse(
         agent: agent,
         avatarState: lastReply.avatarState ?? 'IDLE',
@@ -78,6 +82,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _crisisMessage = CrisisBackstop.resourceMessage;
         _lastResponse = null;
+        _lastUserText = input;
       });
       await _conversationLog.append(ConversationEntry(
         timestamp: DateTime.now(),
@@ -106,6 +111,7 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _crisisMessage = CrisisBackstop.resourceMessage;
           _lastResponse = null;
+          _lastUserText = input;
         });
         await _conversationLog.append(ConversationEntry(
           timestamp: DateTime.now(),
@@ -114,7 +120,10 @@ class _HomeScreenState extends State<HomeScreen> {
           agent: 'SENTINEL',
         ));
       } else {
-        setState(() => _lastResponse = result);
+        setState(() {
+          _lastResponse = result;
+          _lastUserText = input;
+        });
         // Keyed by the topic the user actually picked, when they picked
         // one -- not by whatever agent the model itself self-reported,
         // which the model doesn't always echo back exactly, and a
@@ -137,11 +146,17 @@ class _HomeScreenState extends State<HomeScreen> {
           logEntry: result.logEntry,
         ));
       }
+      // Only clear the input once the message actually made it out --
+      // on failure below, leave it in the box so the user can just hit
+      // Send again instead of having to retype or copy it from history.
+      _controller.clear();
     } catch (e) {
-      setState(() => _crisisMessage = 'Something went wrong: $e');
+      setState(() {
+        _crisisMessage = 'Something went wrong: $e';
+        _lastUserText = input;
+      });
     } finally {
       setState(() => _loading = false);
-      _controller.clear();
     }
   }
 
@@ -225,32 +240,49 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: ConstrainedBox(
                       constraints: BoxConstraints(minHeight: constraints.maxHeight),
                       child: Center(
-                        child: _crisisMessage != null
-                            ? Padding(
-                                padding: const EdgeInsets.all(24),
-                                child: Text(
-                                  _crisisMessage!,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_lastUserText != null)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                                child: SelectableText(
+                                  _lastUserText!,
                                   textAlign: TextAlign.center,
-                                  style: const TextStyle(fontSize: 16),
+                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        fontStyle: FontStyle.italic,
+                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      ),
                                 ),
-                              )
-                            : response == null
-                                ? const AvatarView(avatarState: 'IDLE')
-                                : Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 16),
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (response.avatarState == 'BREATHING')
-                                          BreathingPacer(pattern: response.breathPattern)
-                                        else
-                                          AvatarView(avatarState: response.avatarState),
-                                        const SizedBox(height: 16),
-                                        Text(response.responseText,
-                                            textAlign: TextAlign.center),
-                                      ],
+                              ),
+                            _crisisMessage != null
+                                ? Padding(
+                                    padding: const EdgeInsets.all(24),
+                                    child: SelectableText(
+                                      _crisisMessage!,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(fontSize: 16),
                                     ),
-                                  ),
+                                  )
+                                : response == null
+                                    ? const AvatarView(avatarState: 'IDLE')
+                                    : Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 16),
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            if (response.avatarState == 'BREATHING')
+                                              BreathingPacer(pattern: response.breathPattern)
+                                            else
+                                              AvatarView(avatarState: response.avatarState),
+                                            const SizedBox(height: 16),
+                                            SelectableText(response.responseText,
+                                                textAlign: TextAlign.center),
+                                          ],
+                                        ),
+                                      ),
+                          ],
+                        ),
                       ),
                     ),
                   );

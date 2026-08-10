@@ -149,7 +149,7 @@ class _Bubble extends StatelessWidget {
           children: [
             Text(role, style: Theme.of(context).textTheme.labelSmall),
             const SizedBox(height: 4),
-            Text(text),
+            SelectableText(text),
             const SizedBox(height: 4),
             Text(
               _formatTime(timestamp),
