@@ -85,7 +85,29 @@ class ClaudeService {
       ),
     );
     final text = textBlock['text'] as String;
-    final parsed = jsonDecode(text) as Map<String, dynamic>;
-    return AgentResponse.fromJson(parsed);
+    return AgentResponse.fromJson(_parseAgentJson(text));
+  }
+
+  /// The system prompt demands "ONLY a valid JSON object, no surrounding
+  /// prose" -- but the model occasionally breaks that contract anyway and
+  /// answers in plain, empathetic prose instead (seen most on emotionally
+  /// weighted input). A raw jsonDecode there used to crash the whole turn
+  /// with a FormatException and lose the reply entirely. Recover instead:
+  /// try strict JSON, then a JSON object embedded in surrounding text
+  /// (e.g. wrapped in a markdown code fence), then fall back to using the
+  /// model's own words directly as the response text.
+  Map<String, dynamic> _parseAgentJson(String text) {
+    try {
+      return jsonDecode(text) as Map<String, dynamic>;
+    } catch (_) {
+      final start = text.indexOf('{');
+      final end = text.lastIndexOf('}');
+      if (start != -1 && end > start) {
+        try {
+          return jsonDecode(text.substring(start, end + 1)) as Map<String, dynamic>;
+        } catch (_) {}
+      }
+      return {'response_text': text.trim()};
+    }
   }
 }
