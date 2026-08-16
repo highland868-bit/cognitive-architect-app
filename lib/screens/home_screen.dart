@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/agent_response.dart';
 import '../services/claude_service.dart';
 import '../services/conversation_log_service.dart';
 import '../services/crisis_backstop.dart';
+import '../services/sync_service.dart';
 import '../services/tts_service.dart';
 import '../services/trait_log_service.dart';
 import '../services/voice_pref_service.dart';
@@ -11,6 +13,7 @@ import '../widgets/avatar_view.dart';
 import '../widgets/breathing_pacer.dart';
 import 'api_key_screen.dart';
 import 'history_screen.dart';
+import 'sync_settings_screen.dart';
 import 'voice_settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -26,6 +29,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final _tts = TtsService();
   final _traitLog = TraitLogService();
   final _conversationLog = ConversationLogService();
+  final _sync = SyncService();
 
   AgentResponse? _lastResponse;
   bool _loading = false;
@@ -35,6 +39,28 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _voiceEnabled = VoicePrefService.get();
 
   String? get _displayText => _crisisMessage ?? _lastResponse?.responseText;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncOnStartup();
+  }
+
+  /// Pulls whatever the cloud has, merges it with what's already local
+  /// (never destructive -- entries only ever combine, never overwrite),
+  /// and pushes the merged result back so both devices converge. No-op
+  /// if sync hasn't been set up. Best-effort: SyncService swallows its
+  /// own errors, so this never blocks the app from working offline.
+  Future<void> _syncOnStartup() async {
+    final remote = await _sync.pull();
+    if (remote == null) return;
+    final merged = await _conversationLog.mergeWithRemote(remote);
+    await _sync.push(merged);
+  }
+
+  Future<void> _syncPush() async {
+    await _sync.push(await _conversationLog.readAll());
+  }
 
   /// Switching topics shows that topic's own last exchange if it has one,
   /// rather than always resetting to idle -- otherwise every topic looked
@@ -90,6 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
         text: CrisisBackstop.resourceMessage,
         agent: 'SENTINEL',
       ));
+      unawaited(_syncPush());
       _controller.clear();
       return;
     }
@@ -119,6 +146,7 @@ class _HomeScreenState extends State<HomeScreen> {
           text: CrisisBackstop.resourceMessage,
           agent: 'SENTINEL',
         ));
+        unawaited(_syncPush());
       } else {
         setState(() {
           _lastResponse = result;
@@ -145,6 +173,7 @@ class _HomeScreenState extends State<HomeScreen> {
           technique: result.technique,
           logEntry: result.logEntry,
         ));
+        unawaited(_syncPush());
       }
       // Only clear the input once the message actually made it out --
       // on failure below, leave it in the box so the user can just hit
@@ -212,6 +241,15 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () {
               Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => const HistoryScreen(),
+              ));
+            },
+          ),
+          IconButton(
+            icon: Icon(SyncService.isConfigured ? Icons.cloud_done_outlined : Icons.cloud_sync_outlined),
+            tooltip: 'Sync across devices',
+            onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const SyncSettingsScreen(),
               ));
             },
           ),

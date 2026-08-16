@@ -82,6 +82,26 @@ class ConversationLogService {
         .toList();
   }
 
+  Future<void> _writeAll(List<ConversationEntry> entries) async {
+    final raw = entries.map((e) => jsonEncode(e.toJson())).toList();
+    html.window.localStorage[_key] = jsonEncode(raw);
+  }
+
+  /// Merges entries pulled from cloud sync into the local log, deduping by
+  /// timestamp+role+text so re-pulling the same data is a no-op, and
+  /// keeping this device's own entries the cloud doesn't have yet. Returns
+  /// the merged result, which is also written back to localStorage.
+  Future<List<ConversationEntry>> mergeWithRemote(List<ConversationEntry> remote) async {
+    final local = await readAll();
+    final merged = <String, ConversationEntry>{};
+    for (final e in [...local, ...remote]) {
+      merged['${e.timestamp.toIso8601String()}|${e.role}|${e.text}'] = e;
+    }
+    final result = merged.values.toList()..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    await _writeAll(result);
+    return result;
+  }
+
   /// Loads the most recent turns previously answered by [agent], oldest
   /// first, ready to hand to ClaudeService as conversation context.
   Future<List<ConversationTurn>> turnsForAgent(String agent) async {
