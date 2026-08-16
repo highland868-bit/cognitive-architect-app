@@ -37,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _lastUserText;
   String? _selectedAgent;
   bool _voiceEnabled = VoicePrefService.get();
+  bool _syncing = false;
 
   String? get _displayText => _crisisMessage ?? _lastResponse?.responseText;
 
@@ -60,6 +61,24 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _syncPush() async {
     await _sync.push(await _conversationLog.readAll());
+  }
+
+  /// Manual pull-merge-push, since sync otherwise only pulls on app
+  /// launch -- the other device's messages don't show up here until
+  /// then. Also re-displays the current topic in case sync just brought
+  /// in a newer exchange than what's on screen.
+  Future<void> _syncNow() async {
+    if (_syncing) return;
+    setState(() => _syncing = true);
+    try {
+      await _syncOnStartup();
+      if (_selectedAgent != null) await _switchTopic(_selectedAgent);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Synced')));
+      }
+    } finally {
+      if (mounted) setState(() => _syncing = false);
+    }
   }
 
   /// Switching topics shows that topic's own last exchange if it has one,
@@ -244,14 +263,33 @@ class _HomeScreenState extends State<HomeScreen> {
               ));
             },
           ),
-          IconButton(
-            icon: Icon(SyncService.isConfigured ? Icons.cloud_done_outlined : Icons.cloud_sync_outlined),
-            tooltip: 'Sync across devices',
-            onPressed: () {
+          GestureDetector(
+            onLongPress: () {
               Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => const SyncSettingsScreen(),
               ));
             },
+            child: IconButton(
+              icon: _syncing
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(SyncService.isConfigured ? Icons.cloud_done_outlined : Icons.cloud_sync_outlined),
+              tooltip: SyncService.isConfigured
+                  ? 'Tap to sync now, hold to change passphrase'
+                  : 'Set up sync across devices',
+              onPressed: () {
+                if (SyncService.isConfigured) {
+                  _syncNow();
+                } else {
+                  Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const SyncSettingsScreen(),
+                  ));
+                }
+              },
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.key),
