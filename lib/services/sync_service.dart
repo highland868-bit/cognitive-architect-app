@@ -126,7 +126,11 @@ class SyncService {
       });
       final token = await _ensureAuth();
       var resp = await http.patch(_docUri, headers: {'authorization': 'Bearer $token'}, body: body);
-      if (resp.statusCode == 401) {
+      // Firestore returns 403 PERMISSION_DENIED (not 401) for a stale or
+      // otherwise invalid token, not just for a genuinely-disallowed
+      // request -- checking only 401 here left a bad cached token stuck
+      // forever, since it never triggered a refresh.
+      if (resp.statusCode == 401 || resp.statusCode == 403) {
         final fresh = await _refreshAuth();
         resp = await http.patch(_docUri, headers: {'authorization': 'Bearer $fresh'}, body: body);
       }
@@ -150,7 +154,8 @@ class SyncService {
     try {
       final token = await _ensureAuth();
       var resp = await http.get(_docUri, headers: {'authorization': 'Bearer $token'});
-      if (resp.statusCode == 401) {
+      // See push() for why 403 is treated the same as 401 here.
+      if (resp.statusCode == 401 || resp.statusCode == 403) {
         final fresh = await _refreshAuth();
         resp = await http.get(_docUri, headers: {'authorization': 'Bearer $fresh'});
       }

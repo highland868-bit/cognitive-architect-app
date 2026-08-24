@@ -49095,7 +49095,7 @@ f=window.localStorage.getItem("sync_passphrase")
 s=8
 return A.D(A.aKU(A.eI(u.X+n.oe(f==null?"":f)),m,A.an(["authorization","Bearer "+A.k(l)],h,h)),$async$fa)
 case 8:k=c
-s=k.b===401?9:10
+s=k.b===401||k.b===403?9:10
 break
 case 9:s=11
 return A.D(n.uu(),$async$fa)
@@ -49137,7 +49137,7 @@ e=t.N
 s=8
 return A.D(A.aKu(A.eI(u.X+n.oe(b==null?"":b)),A.an(["authorization","Bearer "+A.k(m)],e,e)),$async$nD)
 case 8:l=a2
-s=l.b===401?9:10
+s=l.b===401||l.b===403?9:10
 break
 case 9:s=11
 return A.D(n.uu(),$async$nD)
