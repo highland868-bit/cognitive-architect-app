@@ -48494,12 +48494,12 @@ break
 case 10:case 1:return A.K(q,r)
 case 2:return A.J(o.at(-1),r)}})
 return A.L($async$kM,r)},
-M(a){var s,r,q,p,o,n,m=this,l=null,k="sync_passphrase",j=m.y,i=m.ax==null?"Auto":B.b.AU(B.eL,new A.arl(m)).b,h=m.ax,g=A.a3(a).ok.Q
-if(g==null)g=l
+M(a){var s,r,q,p,o,n,m=this,l=null,k=m.y,j=m.ax==null?"Auto":B.b.AU(B.eL,new A.arl(m)).b,i=m.ax,h=A.a3(a).ok.Q
+if(h==null)h=l
 else{s=A.a3(a).ax
 r=s.rx
-g=g.c2(r==null?s.k3:r)}s=t.D
-g=A.hP(A.b([B.Vx,A.e4("Mode: "+i,l,l,l,g,l,l)],s),B.bm,B.aq,B.bq)
+h=h.c2(r==null?s.k3:r)}s=t.D
+h=A.hP(A.b([B.Vx,A.e4("Mode: "+j,l,l,l,h,l,l)],s),B.bm,B.aq,B.bq)
 r=m.ay
 q=A.q0(r?B.G3:B.G2,l)
 r=r?"Voice on":"Voice off"
@@ -48507,19 +48507,17 @@ r=A.nf(l,l,q,l,l,new A.arm(m),l,l,r)
 q=A.nf(l,l,B.Gf,l,l,new A.arn(m,a),l,l,"Choose voice")
 p=A.nf(l,l,B.Gg,l,l,new A.aro(a),l,l,"Conversation history")
 if(m.ch)o=B.Q9
-else{o=window.localStorage.getItem(k)
+else{o=window.localStorage.getItem("sync_passphrase")
 n=A.q0((o==null?"":o).length!==0?B.G5:B.Ga,l)
-o=n}n=window.localStorage.getItem(k)
-n=(n==null?"":n).length!==0?"Tap to sync now, hold to change passphrase":"Set up sync across devices"
-g=A.JV(A.b([r,q,p,A.nd(l,A.nf(l,l,o,l,l,new A.arp(m,a),l,l,n),B.aj,!1,l,l,l,l,l,l,l,new A.arq(a),l,l,l,l,l,l,l,l,l,l,l,l,l),A.nf(l,l,B.Gd,l,l,new A.arr(a),l,l,"Update API key")],s),g)
-s=A.b([A.aF_(A.aSk(new A.ars(m,j)))],s)
+o=n}h=A.JV(A.b([r,q,p,A.nd(l,A.nf(l,l,o,l,l,new A.arp(m,a),l,l,l),B.aj,!1,l,l,l,l,l,l,l,new A.arq(a),l,l,l,l,l,l,l,l,l,l,l,l,l),A.nf(l,l,B.Gd,l,l,new A.arr(a),l,l,"Update API key")],s),h)
+s=A.b([A.aF_(A.aSk(new A.ars(m,k)))],s)
 if(m.ay&&m.gPj()!=null)s.push(new A.DT(!0,new A.art(m),l,l,l,l,B.K,l,!1,l,!0,l,new A.ZD(B.Vv,B.oh,l,l,l),l))
 if(m.z)s.push(B.j7)
 s.push(B.ie)
 s.push(A.aB7(l,m.d,B.GC,!0,3,!1,l,B.ik))
 s.push(B.Qb)
 s.push(A.azZ(B.Vr,m.z?l:m.gakP()))
-return A.Q3(g,new A.cu(B.nB,A.hP(s,B.aJ,B.aq,B.cl),l),new A.JK(h,new A.aru(m,a),l))}}
+return A.Q3(h,new A.cu(B.nB,A.hP(s,B.aJ,B.aq,B.cl),l),new A.JK(i,new A.aru(m,a),l))}}
 A.ar2.prototype={
 $1(a){return B.c.pv(B.e.k(a),2,"0")},
 $S:52}

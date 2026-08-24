@@ -301,9 +301,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : Icon(SyncService.isConfigured ? Icons.cloud_done_outlined : Icons.cloud_sync_outlined),
-              tooltip: SyncService.isConfigured
-                  ? 'Tap to sync now, hold to change passphrase'
-                  : 'Set up sync across devices',
+              // No `tooltip:` here deliberately -- IconButton wires that
+              // to its own internal long-press-to-show gesture on touch
+              // devices, which was winning the gesture arena over the
+              // GestureDetector.onLongPress above and swallowing the tap
+              // entirely, so holding the icon showed the tooltip text
+              // instead of ever opening Settings.
               onPressed: () {
                 if (SyncService.isConfigured) {
                   _syncNow();
