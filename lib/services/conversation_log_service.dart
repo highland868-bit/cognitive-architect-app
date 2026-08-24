@@ -91,10 +91,22 @@ class ConversationLogService {
   /// timestamp+role+text so re-pulling the same data is a no-op, and
   /// keeping this device's own entries the cloud doesn't have yet. Returns
   /// the merged result, which is also written back to localStorage.
+  ///
+  /// [remote] was fetched over the network, so by the time this runs it
+  /// may already be stale relative to local storage -- e.g. another tab,
+  /// or a message sent while this sync was in flight. Re-reading local
+  /// storage immediately before writing (rather than trusting the read
+  /// from the top of this function) closes most of that window: a plain
+  /// read-merge-write here could otherwise silently erase entries another
+  /// concurrent session already saved, by overwriting them with an older,
+  /// smaller union.
   Future<List<ConversationEntry>> mergeWithRemote(List<ConversationEntry> remote) async {
     final local = await readAll();
     final merged = <String, ConversationEntry>{};
     for (final e in [...local, ...remote]) {
+      merged['${e.timestamp.toIso8601String()}|${e.role}|${e.text}'] = e;
+    }
+    for (final e in await readAll()) {
       merged['${e.timestamp.toIso8601String()}|${e.role}|${e.text}'] = e;
     }
     final result = merged.values.toList()..sort((a, b) => a.timestamp.compareTo(b.timestamp));

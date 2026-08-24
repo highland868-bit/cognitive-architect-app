@@ -35,11 +35,18 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _loading = false;
   String? _crisisMessage;
   String? _lastUserText;
+  DateTime? _lastTimestamp;
   String? _selectedAgent;
   bool _voiceEnabled = VoicePrefService.get();
   bool _syncing = false;
 
   String? get _displayText => _crisisMessage ?? _lastResponse?.responseText;
+
+  String _formatTimestamp(DateTime t) {
+    final local = t.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${local.month}/${local.day} ${two(local.hour)}:${two(local.minute)}';
+  }
 
   @override
   void initState() {
@@ -55,12 +62,22 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _syncOnStartup() async {
     final remote = await _sync.pull();
     if (remote == null) return;
-    final merged = await _conversationLog.mergeWithRemote(remote);
-    await _sync.push(merged);
+    await _conversationLog.mergeWithRemote(remote);
+    await _syncPush(); // routed through the same chain as post-turn pushes
   }
 
-  Future<void> _syncPush() async {
-    await _sync.push(await _conversationLog.readAll());
+  // Chains pushes so they always complete in the order they were queued --
+  // otherwise sending several messages quickly fires several background
+  // pushes that can finish out of order, and an earlier one (with fewer
+  // entries) landing last would leave the cloud copy smaller than what's
+  // actually on this device.
+  Future<void> _pushChain = Future.value();
+
+  Future<void> _syncPush() {
+    _pushChain = _pushChain.then((_) async {
+      await _sync.push(await _conversationLog.readAll());
+    });
+    return _pushChain;
   }
 
   /// Manual pull-merge-push, since sync otherwise only pulls on app
@@ -90,6 +107,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _lastResponse = null;
       _crisisMessage = null;
       _lastUserText = null;
+      _lastTimestamp = null;
     });
     if (agent == null) return; // Auto mode: always a fresh check-in.
 
@@ -101,6 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     setState(() {
       _lastUserText = lastTurn?.user?.text;
+      _lastTimestamp = lastTurn?.user?.timestamp ?? lastReply.timestamp;
       _lastResponse = AgentResponse(
         agent: agent,
         avatarState: lastReply.avatarState ?? 'IDLE',
@@ -117,9 +136,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _submit() async {
     final input = _controller.text.trim();
     if (input.isEmpty) return;
+    final sentAt = DateTime.now();
 
     await _conversationLog.append(
-      ConversationEntry(timestamp: DateTime.now(), role: 'user', text: input),
+      ConversationEntry(timestamp: sentAt, role: 'user', text: input),
     );
 
     // Deterministic safety net runs first, independent of the model.
@@ -128,6 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _crisisMessage = CrisisBackstop.resourceMessage;
         _lastResponse = null;
         _lastUserText = input;
+        _lastTimestamp = sentAt;
       });
       await _conversationLog.append(ConversationEntry(
         timestamp: DateTime.now(),
@@ -158,6 +179,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _crisisMessage = CrisisBackstop.resourceMessage;
           _lastResponse = null;
           _lastUserText = input;
+          _lastTimestamp = sentAt;
         });
         await _conversationLog.append(ConversationEntry(
           timestamp: DateTime.now(),
@@ -170,6 +192,7 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _lastResponse = result;
           _lastUserText = input;
+          _lastTimestamp = sentAt;
         });
         // Keyed by the topic the user actually picked, when they picked
         // one -- not by whatever agent the model itself self-reported,
@@ -202,6 +225,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _crisisMessage = 'Something went wrong: $e';
         _lastUserText = input;
+        _lastTimestamp = sentAt;
       });
     } finally {
       setState(() => _loading = false);
@@ -322,13 +346,28 @@ class _HomeScreenState extends State<HomeScreen> {
                             if (_lastUserText != null)
                               Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                                child: SelectableText(
-                                  _lastUserText!,
-                                  textAlign: TextAlign.center,
-                                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                        fontStyle: FontStyle.italic,
-                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    SelectableText(
+                                      _lastUserText!,
+                                      textAlign: TextAlign.center,
+                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                            fontStyle: FontStyle.italic,
+                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                          ),
+                                    ),
+                                    if (_lastTimestamp != null)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          _formatTimestamp(_lastTimestamp!),
+                                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                                color: Theme.of(context).colorScheme.outline,
+                                              ),
+                                        ),
                                       ),
+                                  ],
                                 ),
                               ),
                             _crisisMessage != null

@@ -55,6 +55,12 @@ class SyncService {
 
   String get _docId => _hash(passphrase ?? '');
 
+  /// Exposed so the settings screen can display it -- comparing this
+  /// short code between two devices is a much faster way to confirm
+  /// they're actually linked to the same cloud document than
+  /// re-typing the passphrase and hoping it matched.
+  String get docId => _docId;
+
   Uri get _docUri => Uri.parse(
         'https://firestore.googleapis.com/v1/projects/$_projectId/databases/(default)/documents/sync_conversation_log/$_docId',
       );

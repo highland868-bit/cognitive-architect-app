@@ -21,6 +21,7 @@ class _CognitiveArchitectAppState extends State<CognitiveArchitectApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Cognitive Architect',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorSchemeSeed: Colors.blueGrey,
         useMaterial3: true,

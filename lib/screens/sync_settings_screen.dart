@@ -31,7 +31,9 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
       final remote = await _sync.pull();
       final merged = remote == null ? await _log.readAll() : await _log.mergeWithRemote(remote);
       await _sync.push(merged);
-      setState(() => _status = 'Linked. ${merged.length} messages synced.');
+      setState(() => _status =
+          'Linked. ${merged.length} messages synced. Sync ID: ${_sync.docId} '
+          '-- this should match exactly on every linked device.');
     } catch (e) {
       setState(() => _status = 'Saved locally, but sync failed: $e');
     } finally {
@@ -62,12 +64,28 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
                 border: OutlineInputBorder(),
               ),
               obscureText: true,
+              // Explicit, not left to platform defaults: the passphrase is
+              // hashed byte-for-byte into the Firestore doc path, so any
+              // difference between devices in auto-capitalization or
+              // autocorrect -- a very real risk on mobile keyboards --
+              // silently points them at two different documents.
+              textCapitalization: TextCapitalization.none,
+              autocorrect: false,
+              enableSuggestions: false,
             ),
             const SizedBox(height: 12),
             ElevatedButton(
               onPressed: _busy ? null : _save,
               child: _busy ? const CircularProgressIndicator() : const Text('Save & sync now'),
             ),
+            if (SyncService.isConfigured) ...[
+              const SizedBox(height: 12),
+              Text(
+                'Current sync ID: ${_sync.docId} -- compare this on each '
+                'device to confirm they\'re actually linked to the same data.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
             if (_status != null) ...[
               const SizedBox(height: 12),
               Text(_status!),
