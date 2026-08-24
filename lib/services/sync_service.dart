@@ -65,6 +65,13 @@ class SyncService {
         'https://firestore.googleapis.com/v1/projects/$_projectId/databases/(default)/documents/sync_conversation_log/$_docId',
       );
 
+  /// The exception from the most recent failed push/pull, if any --
+  /// push/pull themselves stay best-effort (never throw, so a flaky
+  /// connection can't block the app), but silently swallowing every
+  /// failure made a real bug undiagnosable from a device without a
+  /// dev-tools console (iOS Safari). Cleared on the next successful call.
+  String? lastError;
+
   Future<String> _signUpAnonymously() async {
     final resp = await http.post(
       Uri.parse('https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=$_apiKey'),
@@ -123,13 +130,21 @@ class SyncService {
         final fresh = await _refreshAuth();
         resp = await http.patch(_docUri, headers: {'authorization': 'Bearer $fresh'}, body: body);
       }
-    } catch (_) {
-      // best-effort; local storage already has this data regardless
+      if (resp.statusCode != 200) {
+        lastError = 'push HTTP ${resp.statusCode}: ${resp.body}';
+        return;
+      }
+      lastError = null;
+    } catch (e) {
+      // still best-effort -- local storage already has this data
+      // regardless -- but now the failure is at least inspectable.
+      lastError = 'push threw: $e';
     }
   }
 
   /// Fetches the cloud copy, or null if nothing's been synced yet, sync
-  /// isn't configured, or the request fails for any reason.
+  /// isn't configured, or the request fails for any reason (check
+  /// [lastError] afterward to tell which).
   Future<List<ConversationEntry>?> pull() async {
     if (!isConfigured) return null;
     try {
@@ -139,13 +154,22 @@ class SyncService {
         final fresh = await _refreshAuth();
         resp = await http.get(_docUri, headers: {'authorization': 'Bearer $fresh'});
       }
-      if (resp.statusCode != 200) return null;
+      if (resp.statusCode != 200) {
+        lastError = 'pull HTTP ${resp.statusCode}: ${resp.body}';
+        return null;
+      }
       final data = jsonDecode(resp.body) as Map<String, dynamic>;
       final raw = data['fields']?['data']?['stringValue'] as String?;
-      if (raw == null) return null;
+      if (raw == null) {
+        lastError = null; // genuinely nothing pushed yet -- not a failure
+        return null;
+      }
       final list = jsonDecode(raw) as List<dynamic>;
-      return list.map((e) => ConversationEntry.fromJson(e as Map<String, dynamic>)).toList();
-    } catch (_) {
+      final result = list.map((e) => ConversationEntry.fromJson(e as Map<String, dynamic>)).toList();
+      lastError = null;
+      return result;
+    } catch (e) {
+      lastError = 'pull threw: $e';
       return null;
     }
   }

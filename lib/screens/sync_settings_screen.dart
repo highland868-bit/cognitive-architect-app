@@ -29,11 +29,21 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
     SyncService.setPassphrase(value);
     try {
       final remote = await _sync.pull();
+      if (remote == null && _sync.lastError != null) {
+        // pull() failed outright (network/parse/auth) rather than there
+        // genuinely being nothing to pull yet -- surface that distinctly,
+        // since silently falling back to local-only here is exactly what
+        // made this kind of failure invisible before.
+        setState(() => _status = 'Sync ID: ${_sync.docId}. Pull failed: ${_sync.lastError}');
+        return;
+      }
       final merged = remote == null ? await _log.readAll() : await _log.mergeWithRemote(remote);
       await _sync.push(merged);
-      setState(() => _status =
-          'Linked. ${merged.length} messages synced. Sync ID: ${_sync.docId} '
-          '-- this should match exactly on every linked device.');
+      final pushError = _sync.lastError;
+      setState(() => _status = pushError != null
+          ? 'Pulled OK (${merged.length} total), but push failed: $pushError'
+          : 'Linked. ${merged.length} messages synced. Sync ID: ${_sync.docId} '
+              '-- this should match exactly on every linked device.');
     } catch (e) {
       setState(() => _status = 'Saved locally, but sync failed: $e');
     } finally {

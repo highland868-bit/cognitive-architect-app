@@ -96,6 +96,14 @@ class ClaudeService {
   /// try strict JSON, then a JSON object embedded in surrounding text
   /// (e.g. wrapped in a markdown code fence), then fall back to using the
   /// model's own words directly as the response text.
+  ///
+  /// That prose fallback has a failure mode of its own, though: a reply
+  /// that *was* attempting JSON but got cut off mid-object (network
+  /// hiccup, truncation) also fails both parse attempts, and isn't
+  /// prose -- it's a broken JSON fragment like `{"agent": "PSYCHE", "br`.
+  /// Displaying that raw to the user is worse than a clear error, so text
+  /// that starts with `{` and still doesn't parse is treated as a broken
+  /// reply, not chattiness, and gets an honest placeholder instead.
   Map<String, dynamic> _parseAgentJson(String text) {
     try {
       return jsonDecode(text) as Map<String, dynamic>;
@@ -106,6 +114,11 @@ class ClaudeService {
         try {
           return jsonDecode(text.substring(start, end + 1)) as Map<String, dynamic>;
         } catch (_) {}
+      }
+      if (text.trim().startsWith('{')) {
+        return {
+          'response_text': "That reply didn't come through cleanly -- try sending it again.",
+        };
       }
       return {'response_text': text.trim()};
     }
