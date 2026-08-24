@@ -111,9 +111,19 @@ class ClaudeService {
       final start = text.indexOf('{');
       final end = text.lastIndexOf('}');
       if (start != -1 && end > start) {
+        final candidate = text.substring(start, end + 1);
         try {
-          return jsonDecode(text.substring(start, end + 1)) as Map<String, dynamic>;
-        } catch (_) {}
+          return jsonDecode(candidate) as Map<String, dynamic>;
+        } catch (_) {
+          // The dominant real cause, not just truncation: the model
+          // routinely writes response_text as genuine multi-paragraph
+          // prose with real newlines, instead of escaping them as \n
+          // within the JSON string -- which is invalid JSON even though
+          // the object is otherwise complete. Repair rather than give up.
+          try {
+            return jsonDecode(_escapeControlCharsInStrings(candidate)) as Map<String, dynamic>;
+          } catch (_) {}
+        }
       }
       if (text.trim().startsWith('{')) {
         return {
@@ -122,5 +132,43 @@ class ClaudeService {
       }
       return {'response_text': text.trim()};
     }
+  }
+
+  /// Escapes literal newline/tab/carriage-return characters that appear
+  /// *inside a JSON string value* (illegal per the JSON spec) into their
+  /// proper \n/\t/\r escape sequences, while leaving structural
+  /// whitespace between tokens -- e.g. the model's own pretty-printed
+  /// indentation outside strings -- untouched. Tracks string-boundary
+  /// state char by char so it doesn't touch anything outside a string.
+  String _escapeControlCharsInStrings(String text) {
+    final buffer = StringBuffer();
+    var inString = false;
+    var escaped = false;
+    for (final ch in text.split('')) {
+      if (inString) {
+        if (escaped) {
+          buffer.write(ch);
+          escaped = false;
+        } else if (ch == r'\') {
+          buffer.write(ch);
+          escaped = true;
+        } else if (ch == '"') {
+          buffer.write(ch);
+          inString = false;
+        } else if (ch == '\n') {
+          buffer.write(r'\n');
+        } else if (ch == '\r') {
+          buffer.write(r'\r');
+        } else if (ch == '\t') {
+          buffer.write(r'\t');
+        } else {
+          buffer.write(ch);
+        }
+      } else {
+        if (ch == '"') inString = true;
+        buffer.write(ch);
+      }
+    }
+    return buffer.toString();
   }
 }
