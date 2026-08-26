@@ -4,6 +4,7 @@ import '../models/agent_response.dart';
 import '../system_prompt.dart';
 import 'api_key_service.dart';
 import 'conversation_log_service.dart';
+import 'user_profile_service.dart';
 
 /// Calls the Claude API directly (not claude.ai) and parses the JSON
 /// response into an AgentResponse. Reads the API key from ApiKeyService
@@ -26,10 +27,15 @@ class ClaudeService {
   /// Each assistant turn is replayed as its plain response_text, not the
   /// raw structured JSON it originally returned -- the model only needs
   /// the substance of what it said before, not its own past envelope.
+  /// [profile], if given, is included in the system prompt on every call
+  /// regardless of agent/topic -- Core facts plus recent Notes, the one
+  /// thing all five agents (and Auto) actually share, unlike [history]
+  /// which stays siloed to whichever topic was picked.
   Future<AgentResponse> send(
     String userInput, {
     String? forcedAgent,
     List<ConversationTurn> history = const [],
+    UserProfile? profile,
   }) async {
     final apiKey = ApiKeyService.get();
     if (apiKey == null || apiKey.isEmpty) {
@@ -65,7 +71,7 @@ class ClaudeService {
       body: jsonEncode({
         'model': _model,
         'max_tokens': 1024,
-        'system': cognitiveArchitectSystemPrompt,
+        'system': _systemPromptWith(profile),
         'messages': messages,
       }),
     );
@@ -86,6 +92,26 @@ class ClaudeService {
     );
     final text = textBlock['text'] as String;
     return AgentResponse.fromJson(_parseAgentJson(text));
+  }
+
+  String _systemPromptWith(UserProfile? profile) {
+    if (profile == null || (profile.core.isEmpty && profile.notes.isEmpty)) {
+      return cognitiveArchitectSystemPrompt;
+    }
+    final buffer = StringBuffer(cognitiveArchitectSystemPrompt)..writeln();
+    if (profile.core.isNotEmpty) {
+      buffer.writeln('\nCORE FACTS ABOUT THIS USER (stable, user-approved):');
+      for (final fact in profile.core) {
+        buffer.writeln('- $fact');
+      }
+    }
+    if (profile.notes.isNotEmpty) {
+      buffer.writeln('\nRECENT OBSERVATIONS (noted in past turns):');
+      for (final note in profile.notes) {
+        buffer.writeln('- ${note.text}');
+      }
+    }
+    return buffer.toString();
   }
 
   /// The system prompt demands "ONLY a valid JSON object, no surrounding

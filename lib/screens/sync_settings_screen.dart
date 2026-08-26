@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/conversation_log_service.dart';
 import '../services/sync_service.dart';
+import '../services/user_profile_service.dart';
 
 /// Enter the same passphrase on every device to link them -- it's never
 /// sent anywhere itself, only used locally to derive the (obscured, not
@@ -16,6 +17,7 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
   final _controller = TextEditingController(text: SyncService.passphrase ?? '');
   final _sync = SyncService();
   final _log = ConversationLogService();
+  final _profileService = UserProfileService();
   bool _busy = false;
   String? _status;
 
@@ -37,12 +39,16 @@ class _SyncSettingsScreenState extends State<SyncSettingsScreen> {
         setState(() => _status = 'Sync ID: ${_sync.docId}. Pull failed: ${_sync.lastError}');
         return;
       }
-      final merged = remote == null ? await _log.readAll() : await _log.mergeWithRemote(remote);
-      await _sync.push(merged);
+      final mergedEntries =
+          remote == null ? await _log.readAll() : await _log.mergeWithRemote(remote.entries);
+      final mergedProfile = remote == null
+          ? await _profileService.read()
+          : await _profileService.mergeWithRemote(remote.profile);
+      await _sync.push(mergedEntries, mergedProfile);
       final pushError = _sync.lastError;
       setState(() => _status = pushError != null
-          ? 'Pulled OK (${merged.length} total), but push failed: $pushError'
-          : 'Linked. ${merged.length} messages synced. Sync ID: ${_sync.docId} '
+          ? 'Pulled OK (${mergedEntries.length} total), but push failed: $pushError'
+          : 'Linked. ${mergedEntries.length} messages synced. Sync ID: ${_sync.docId} '
               '-- this should match exactly on every linked device.');
     } catch (e) {
       setState(() => _status = 'Saved locally, but sync failed: $e');

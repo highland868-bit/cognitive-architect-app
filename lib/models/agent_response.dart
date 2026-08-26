@@ -9,6 +9,7 @@ class AgentResponse {
   final String traitTarget;
   final String responseText;
   final String logEntry;
+  final String? profileNote;
 
   AgentResponse({
     required this.agent,
@@ -19,6 +20,7 @@ class AgentResponse {
     required this.traitTarget,
     required this.responseText,
     required this.logEntry,
+    this.profileNote,
   });
 
   factory AgentResponse.fromJson(Map<String, dynamic> json) {
@@ -31,6 +33,7 @@ class AgentResponse {
       traitTarget: json['trait_target'] as String? ?? 'none',
       responseText: json['response_text'] as String? ?? '',
       logEntry: json['log_entry'] as String? ?? '',
+      profileNote: json['profile_note'] as String?,
     );
   }
 
@@ -43,5 +46,6 @@ class AgentResponse {
         'trait_target': traitTarget,
         'response_text': responseText,
         'log_entry': logEntry,
+        'profile_note': profileNote,
       };
 }

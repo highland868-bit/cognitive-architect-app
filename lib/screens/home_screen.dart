@@ -7,12 +7,14 @@ import '../services/crisis_backstop.dart';
 import '../services/sync_service.dart';
 import '../services/tts_service.dart';
 import '../services/trait_log_service.dart';
+import '../services/user_profile_service.dart';
 import '../services/voice_pref_service.dart';
 import '../widgets/agent_drawer.dart';
 import '../widgets/avatar_view.dart';
 import '../widgets/breathing_pacer.dart';
 import 'api_key_screen.dart';
 import 'history_screen.dart';
+import 'profile_screen.dart';
 import 'sync_settings_screen.dart';
 import 'voice_settings_screen.dart';
 
@@ -30,6 +32,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final _traitLog = TraitLogService();
   final _conversationLog = ConversationLogService();
   final _sync = SyncService();
+  final _profileService = UserProfileService();
 
   AgentResponse? _lastResponse;
   bool _loading = false;
@@ -39,6 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _selectedAgent;
   bool _voiceEnabled = VoicePrefService.get();
   bool _syncing = false;
+  UserProfile _profile = UserProfile.empty();
 
   String? get _displayText => _crisisMessage ?? _lastResponse?.responseText;
 
@@ -51,7 +55,13 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _loadProfile();
     _syncOnStartup();
+  }
+
+  Future<void> _loadProfile() async {
+    final p = await _profileService.read();
+    if (mounted) setState(() => _profile = p);
   }
 
   /// Pulls whatever the cloud has, merges it with what's already local
@@ -62,7 +72,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _syncOnStartup() async {
     final remote = await _sync.pull();
     if (remote == null) return;
-    await _conversationLog.mergeWithRemote(remote);
+    await _conversationLog.mergeWithRemote(remote.entries);
+    await _profileService.mergeWithRemote(remote.profile);
+    await _loadProfile();
     await _syncPush(); // routed through the same chain as post-turn pushes
   }
 
@@ -75,7 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _syncPush() {
     _pushChain = _pushChain.then((_) async {
-      await _sync.push(await _conversationLog.readAll());
+      await _sync.push(await _conversationLog.readAll(), await _profileService.read());
     });
     return _pushChain;
   }
@@ -172,7 +184,12 @@ class _HomeScreenState extends State<HomeScreen> {
       final history = _selectedAgent == null
           ? const <ConversationTurn>[]
           : await _conversationLog.turnsForAgent(_selectedAgent!);
-      final result = await _claude.send(input, forcedAgent: _selectedAgent, history: history);
+      final result = await _claude.send(
+        input,
+        forcedAgent: _selectedAgent,
+        history: history,
+        profile: _profile,
+      );
 
       if (result.crisisFlag) {
         setState(() {
@@ -215,6 +232,11 @@ class _HomeScreenState extends State<HomeScreen> {
           technique: result.technique,
           logEntry: result.logEntry,
         ));
+        final note = result.profileNote?.trim();
+        if (note != null && note.isNotEmpty) {
+          await _profileService.addNote(note);
+          await _loadProfile();
+        }
         unawaited(_syncPush());
       }
       // Only clear the input once the message actually made it out --
@@ -285,6 +307,16 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.of(context).push(MaterialPageRoute(
                 builder: (_) => const HistoryScreen(),
               ));
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.badge_outlined),
+            tooltip: 'Your profile',
+            onPressed: () async {
+              await Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const ProfileScreen(),
+              ));
+              await _loadProfile(); // pick up any edits made while away
             },
           ),
           GestureDetector(

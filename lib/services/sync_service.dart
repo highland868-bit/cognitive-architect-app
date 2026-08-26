@@ -5,6 +5,16 @@ import 'dart:convert';
 import 'dart:html' as html;
 import 'package:http/http.dart' as http;
 import 'conversation_log_service.dart';
+import 'user_profile_service.dart';
+
+/// What a successful pull returns -- the conversation log plus the user
+/// profile (Core + Notes), synced together in the same document so this
+/// doesn't need a second round-trip or a second document to manage.
+class SyncPullResult {
+  final List<ConversationEntry> entries;
+  final UserProfile profile;
+  SyncPullResult({required this.entries, required this.profile});
+}
 
 /// Syncs conversation_log across devices via Firestore's REST API, using
 /// plain HTTP (package:http, already a dependency) rather than the
@@ -115,12 +125,13 @@ class SyncService {
   /// overwriting whatever was there. Best-effort -- errors are swallowed
   /// so a flaky connection never blocks the app, which keeps working
   /// offline-first on local storage regardless.
-  Future<void> push(List<ConversationEntry> entries) async {
+  Future<void> push(List<ConversationEntry> entries, UserProfile profile) async {
     if (!isConfigured) return;
     try {
       final body = jsonEncode({
         'fields': {
           'data': {'stringValue': jsonEncode(entries.map((e) => e.toJson()).toList())},
+          'profile': {'stringValue': jsonEncode(profile.toJson())},
           'updatedAt': {'timestampValue': DateTime.now().toUtc().toIso8601String()},
         },
       });
@@ -149,7 +160,7 @@ class SyncService {
   /// Fetches the cloud copy, or null if nothing's been synced yet, sync
   /// isn't configured, or the request fails for any reason (check
   /// [lastError] afterward to tell which).
-  Future<List<ConversationEntry>?> pull() async {
+  Future<SyncPullResult?> pull() async {
     if (!isConfigured) return null;
     try {
       final token = await _ensureAuth();
@@ -170,9 +181,13 @@ class SyncService {
         return null;
       }
       final list = jsonDecode(raw) as List<dynamic>;
-      final result = list.map((e) => ConversationEntry.fromJson(e as Map<String, dynamic>)).toList();
+      final entries = list.map((e) => ConversationEntry.fromJson(e as Map<String, dynamic>)).toList();
+      final rawProfile = data['fields']?['profile']?['stringValue'] as String?;
+      final profile = rawProfile != null
+          ? UserProfile.fromJson(jsonDecode(rawProfile) as Map<String, dynamic>)
+          : UserProfile.empty();
       lastError = null;
-      return result;
+      return SyncPullResult(entries: entries, profile: profile);
     } catch (e) {
       lastError = 'pull threw: $e';
       return null;
