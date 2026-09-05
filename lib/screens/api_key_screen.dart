@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/api_key_service.dart';
 
 /// Entry point (first-run, or later editing) for the user's own Anthropic
@@ -22,6 +23,26 @@ class _ApiKeyScreenState extends State<ApiKeyScreen> {
     if (key.isEmpty) return;
     ApiKeyService.save(key);
     widget.onSaved();
+  }
+
+  // iOS Safari's native long-press-to-paste gesture is unreliable over
+  // Flutter web's canvas-rendered text fields, so this reads the clipboard
+  // directly via Flutter's own API as a reliable fallback.
+  Future<void> _paste() async {
+    ClipboardData? data;
+    try {
+      data = await Clipboard.getData('text/plain');
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not read clipboard -- try pasting manually instead.')),
+        );
+      }
+      return;
+    }
+    final text = data?.text;
+    if (text == null || text.isEmpty) return;
+    setState(() => _controller.text = text.trim());
   }
 
   @override
@@ -54,9 +75,19 @@ class _ApiKeyScreenState extends State<ApiKeyScreen> {
               decoration: InputDecoration(
                 labelText: 'API key',
                 border: const OutlineInputBorder(),
-                suffixIcon: IconButton(
-                  icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
-                  onPressed: () => setState(() => _obscure = !_obscure),
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.content_paste),
+                      tooltip: 'Paste',
+                      onPressed: _paste,
+                    ),
+                    IconButton(
+                      icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
+                      onPressed: () => setState(() => _obscure = !_obscure),
+                    ),
+                  ],
                 ),
               ),
               onSubmitted: (_) => _save(),
