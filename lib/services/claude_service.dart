@@ -49,7 +49,7 @@ class ClaudeService {
             'unless SENTINEL crisis criteria are met, in which case SENTINEL '
             'still takes priority as usual.]\n\n$userInput';
 
-    final messages = <Map<String, String>>[];
+    final messages = <Map<String, dynamic>>[];
     for (final turn in history) {
       if (turn.user != null) {
         messages.add({'role': 'user', 'content': turn.user!.text});
@@ -57,6 +57,20 @@ class ClaudeService {
       if (turn.assistant != null) {
         messages.add({'role': 'assistant', 'content': turn.assistant!.text});
       }
+    }
+    // Cache breakpoint on the end of the replayed history: within the same
+    // topic, each new turn re-sends this exact prefix, so a follow-up reads
+    // it from cache instead of reprocessing it. Left unmarked when there's
+    // no history yet (nothing shared to cache on a topic's first turn).
+    if (messages.isNotEmpty) {
+      final lastHistoryMessage = messages.last;
+      lastHistoryMessage['content'] = [
+        {
+          'type': 'text',
+          'text': lastHistoryMessage['content'],
+          'cache_control': {'type': 'ephemeral'},
+        },
+      ];
     }
     messages.add({'role': 'user', 'content': messageContent});
 
@@ -80,7 +94,7 @@ class ClaudeService {
         // still thinks more than expected on a given turn.
         'max_tokens': 4096,
         'output_config': {'effort': 'low'},
-        'system': _systemPromptWith(profile),
+        'system': _systemBlocksWith(profile),
         'messages': messages,
       }),
     );
@@ -110,24 +124,38 @@ class ClaudeService {
     return AgentResponse.fromJson(_parseAgentJson(text));
   }
 
-  String _systemPromptWith(UserProfile? profile) {
-    if (profile == null || (profile.core.isEmpty && profile.notes.isEmpty)) {
-      return cognitiveArchitectSystemPrompt;
-    }
-    final buffer = StringBuffer(cognitiveArchitectSystemPrompt)..writeln();
-    if (profile.core.isNotEmpty) {
-      buffer.writeln('\nCORE FACTS ABOUT THIS USER (stable, user-approved):');
-      for (final fact in profile.core) {
-        buffer.writeln('- $fact');
+  /// The frozen prompt and the per-user profile text are sent as separate
+  /// `system` blocks, not concatenated into one string, so a cache
+  /// breakpoint can sit between them: the ~1800-token frozen prompt (block
+  /// 1) is byte-identical on every call and caches; the profile block
+  /// (Core facts + Notes) changes as the user's profile evolves and would
+  /// invalidate the whole cached prefix if it shared a block with the
+  /// frozen prompt -- so it goes after the breakpoint, uncached.
+  List<Map<String, dynamic>> _systemBlocksWith(UserProfile? profile) {
+    final blocks = <Map<String, dynamic>>[
+      {
+        'type': 'text',
+        'text': cognitiveArchitectSystemPrompt,
+        'cache_control': {'type': 'ephemeral'},
+      },
+    ];
+    if (profile != null && (profile.core.isNotEmpty || profile.notes.isNotEmpty)) {
+      final buffer = StringBuffer();
+      if (profile.core.isNotEmpty) {
+        buffer.writeln('CORE FACTS ABOUT THIS USER (stable, user-approved):');
+        for (final fact in profile.core) {
+          buffer.writeln('- $fact');
+        }
       }
-    }
-    if (profile.notes.isNotEmpty) {
-      buffer.writeln('\nRECENT OBSERVATIONS (noted in past turns):');
-      for (final note in profile.notes) {
-        buffer.writeln('- ${note.text}');
+      if (profile.notes.isNotEmpty) {
+        buffer.writeln('\nRECENT OBSERVATIONS (noted in past turns):');
+        for (final note in profile.notes) {
+          buffer.writeln('- ${note.text}');
+        }
       }
+      blocks.add({'type': 'text', 'text': buffer.toString()});
     }
-    return buffer.toString();
+    return blocks;
   }
 
   /// The system prompt demands "ONLY a valid JSON object, no surrounding
