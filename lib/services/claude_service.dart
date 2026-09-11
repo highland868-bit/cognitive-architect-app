@@ -70,7 +70,16 @@ class ClaudeService {
       },
       body: jsonEncode({
         'model': _model,
-        'max_tokens': 1024,
+        // claude-sonnet-5 runs adaptive extended thinking by default even
+        // without an explicit 'thinking' param -- with a low max_tokens
+        // that thinking can consume the *entire* budget and leave zero
+        // room for the actual reply (stop_reason "max_tokens", no text
+        // block at all). effort "low" keeps thinking brief since this is
+        // a quick chat-style reply, not a task that benefits from heavy
+        // reasoning, and the raised max_tokens is headroom in case it
+        // still thinks more than expected on a given turn.
+        'max_tokens': 4096,
+        'output_config': {'effort': 'low'},
         'system': _systemPromptWith(profile),
         'messages': messages,
       }),
@@ -86,10 +95,17 @@ class ClaudeService {
     final content = data['content'] as List<dynamic>;
     final textBlock = content.firstWhere(
       (block) => block['type'] == 'text',
-      orElse: () => throw Exception(
-        'No text block in Claude response: ${response.body}',
-      ),
+      orElse: () => null,
     );
+    // No text block at all -- e.g. the model hit max_tokens while still
+    // thinking. Not the user's fault and not recoverable from this
+    // response; degrade gracefully like a broken-JSON reply instead of
+    // surfacing a raw exception.
+    if (textBlock == null) {
+      return AgentResponse.fromJson({
+        'response_text': "That reply didn't come through cleanly -- try sending it again.",
+      });
+    }
     final text = textBlock['text'] as String;
     return AgentResponse.fromJson(_parseAgentJson(text));
   }
