@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:lottie/lottie.dart';
 
 /// Native, deterministic breath pacer. Per the master plan: pacing must
 /// never be driven by model-generated text timing. This widget owns the
 /// actual inhale/hold/exhale counts, keyed off breath_pattern from the
-/// agent response; the "Breathe Babo" Lottie clip playing alongside it
-/// loops independently as mood/visual only -- it is never the timer.
+/// agent response, and shows only the phase label -- no avatar clip (see
+/// home_screen.dart, which keeps the avatar to the opening screen only).
 class BreathingPacer extends StatefulWidget {
   final String pattern; // '478' | '436' | 'box'
 
@@ -82,17 +81,6 @@ class _BreathingPacerState extends State<BreathingPacer>
   @override
   Widget build(BuildContext context) {
     final phase = _phases[_phaseIndex];
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          width: 160,
-          height: 200,
-          child: Lottie.asset('assets/animations/breathing.json', repeat: true, fit: BoxFit.contain),
-        ),
-        const SizedBox(height: 16),
-        Text(phase.label, style: const TextStyle(fontSize: 20)),
-      ],
-    );
+    return Text(phase.label, style: const TextStyle(fontSize: 20));
   }
 }
