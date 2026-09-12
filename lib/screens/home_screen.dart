@@ -12,6 +12,7 @@ import '../services/voice_pref_service.dart';
 import '../widgets/agent_drawer.dart';
 import '../widgets/avatar_view.dart';
 import '../widgets/breathing_pacer.dart';
+import '../widgets/conversation_turn_tile.dart';
 import 'api_key_screen.dart';
 import 'history_screen.dart';
 import 'profile_screen.dart';
@@ -43,6 +44,16 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _voiceEnabled = VoicePrefService.get();
   bool _syncing = false;
   UserProfile _profile = UserProfile.empty();
+  final _scrollController = ScrollController();
+
+  // Recent turns of the current topic (up to ConversationLogService's
+  // contextLimit, same window already replayed to Claude as context) shown
+  // as scrollback above the live exchange -- so switching tabs or sending a
+  // few messages in a row doesn't leave earlier replies only reachable
+  // from the separate History screen. Only populated in topic mode: Auto
+  // mode is deliberately memoryless (see _switchTopic), so it has no
+  // single topic's thread to scroll back through.
+  List<ConversationTurn> _priorTurns = [];
 
   String? get _displayText => _crisisMessage ?? _lastResponse?.responseText;
 
@@ -57,6 +68,56 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _loadProfile();
     _syncOnStartup();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    });
+  }
+
+  /// Splits [turns] into scrollback (_priorTurns) plus the current "live"
+  /// exchange (_lastResponse/_lastUserText/_lastTimestamp) that gets the
+  /// avatar/breathing-pacer treatment -- shared by _switchTopic (loading a
+  /// topic's saved history) and _submit (after a new turn is persisted).
+  void _applyLatestTurns(String agent, List<ConversationTurn> turns) {
+    if (turns.isEmpty) {
+      setState(() => _priorTurns = []);
+      return;
+    }
+    final lastTurn = turns.last;
+    final lastReply = lastTurn.assistant;
+    if (lastReply == null) {
+      // Last turn has no reply yet (e.g. a send that never got a response
+      // logged) -- nothing to show as the "live" exchange, so surface the
+      // whole thing as scrollback instead of silently dropping it.
+      setState(() => _priorTurns = turns);
+      return;
+    }
+    setState(() {
+      _priorTurns = turns.sublist(0, turns.length - 1);
+      _lastUserText = lastTurn.user?.text;
+      _lastTimestamp = lastTurn.user?.timestamp ?? lastReply.timestamp;
+      _lastResponse = AgentResponse(
+        agent: agent,
+        avatarState: lastReply.avatarState ?? 'IDLE',
+        breathPattern: lastReply.breathPattern ?? 'none',
+        technique: 'none',
+        crisisFlag: false,
+        traitTarget: 'none',
+        responseText: lastReply.text,
+        logEntry: '',
+      );
+    });
+    _scrollToBottom();
   }
 
   Future<void> _loadProfile() async {
@@ -120,29 +181,13 @@ class _HomeScreenState extends State<HomeScreen> {
       _crisisMessage = null;
       _lastUserText = null;
       _lastTimestamp = null;
+      _priorTurns = [];
     });
     if (agent == null) return; // Auto mode: always a fresh check-in.
 
     final turns = await _conversationLog.turnsForAgent(agent);
-    final lastTurn = turns.isEmpty ? null : turns.last;
-    final lastReply = lastTurn?.assistant;
-    if (lastReply == null) return;
     if (!mounted || _selectedAgent != agent) return; // user moved on already
-
-    setState(() {
-      _lastUserText = lastTurn?.user?.text;
-      _lastTimestamp = lastTurn?.user?.timestamp ?? lastReply.timestamp;
-      _lastResponse = AgentResponse(
-        agent: agent,
-        avatarState: lastReply.avatarState ?? 'IDLE',
-        breathPattern: lastReply.breathPattern ?? 'none',
-        technique: 'none',
-        crisisFlag: false,
-        traitTarget: 'none',
-        responseText: lastReply.text,
-        logEntry: '',
-      );
-    });
+    _applyLatestTurns(agent, turns);
   }
 
   Future<void> _submit() async {
@@ -162,6 +207,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _lastUserText = input;
         _lastTimestamp = sentAt;
       });
+      _scrollToBottom();
       await _conversationLog.append(ConversationEntry(
         timestamp: DateTime.now(),
         role: 'assistant',
@@ -198,6 +244,7 @@ class _HomeScreenState extends State<HomeScreen> {
           _lastUserText = input;
           _lastTimestamp = sentAt;
         });
+        _scrollToBottom();
         await _conversationLog.append(ConversationEntry(
           timestamp: DateTime.now(),
           role: 'assistant',
@@ -206,11 +253,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ));
         unawaited(_syncPush());
       } else {
-        setState(() {
-          _lastResponse = result;
-          _lastUserText = input;
-          _lastTimestamp = sentAt;
-        });
         // Keyed by the topic the user actually picked, when they picked
         // one -- not by whatever agent the model itself self-reported,
         // which the model doesn't always echo back exactly, and a
@@ -225,6 +267,17 @@ class _HomeScreenState extends State<HomeScreen> {
           avatarState: result.avatarState,
           breathPattern: result.breathPattern,
         ));
+        if (_selectedAgent != null) {
+          final turns = await _conversationLog.turnsForAgent(_selectedAgent!);
+          if (mounted) _applyLatestTurns(_selectedAgent!, turns);
+        } else {
+          setState(() {
+            _lastResponse = result;
+            _lastUserText = input;
+            _lastTimestamp = sentAt;
+          });
+          _scrollToBottom();
+        }
         await _traitLog.append(TraitLogEntry(
           timestamp: DateTime.now(),
           agent: result.agent,
@@ -252,6 +305,69 @@ class _HomeScreenState extends State<HomeScreen> {
     } finally {
       setState(() => _loading = false);
     }
+  }
+
+  /// The current send/reply -- not yet part of persisted scrollback. The
+  /// avatar itself only appears on the empty/opening screen (see build());
+  /// a reply shows just its text, except BREATHING, which still gets the
+  /// pacer -- that one is a real timed exercise, not decoration.
+  Widget _buildLiveExchange(BuildContext context, AgentResponse? response) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_lastUserText != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SelectableText(
+                  _lastUserText!,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontStyle: FontStyle.italic,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                if (_lastTimestamp != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      _formatTimestamp(_lastTimestamp!),
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        _crisisMessage != null
+            ? Padding(
+                padding: const EdgeInsets.all(24),
+                child: SelectableText(
+                  _crisisMessage!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 16),
+                ),
+              )
+            : response == null
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (response.avatarState == 'BREATHING') ...[
+                          BreathingPacer(pattern: response.breathPattern),
+                          const SizedBox(height: 16),
+                        ],
+                        SelectableText(response.responseText, textAlign: TextAlign.center),
+                      ],
+                    ),
+                  ),
+      ],
+    );
   }
 
   @override
@@ -366,78 +482,20 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           children: [
             Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  // Centers short replies, but scrolls instead of
-                  // overflowing once the avatar/breathing pacer plus
-                  // response text is taller than the available space.
-                  return SingleChildScrollView(
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (_lastUserText != null)
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    SelectableText(
-                                      _lastUserText!,
-                                      textAlign: TextAlign.center,
-                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                            fontStyle: FontStyle.italic,
-                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                          ),
-                                    ),
-                                    if (_lastTimestamp != null)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 4),
-                                        child: Text(
-                                          _formatTimestamp(_lastTimestamp!),
-                                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                                color: Theme.of(context).colorScheme.outline,
-                                              ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            _crisisMessage != null
-                                ? Padding(
-                                    padding: const EdgeInsets.all(24),
-                                    child: SelectableText(
-                                      _crisisMessage!,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(fontSize: 16),
-                                    ),
-                                  )
-                                : response == null
-                                    ? const AvatarView(avatarState: 'IDLE')
-                                    : Padding(
-                                        padding: const EdgeInsets.symmetric(vertical: 16),
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            if (response.avatarState == 'BREATHING')
-                                              BreathingPacer(pattern: response.breathPattern)
-                                            else
-                                              AvatarView(avatarState: response.avatarState),
-                                            const SizedBox(height: 16),
-                                            SelectableText(response.responseText,
-                                                textAlign: TextAlign.center),
-                                          ],
-                                        ),
-                                      ),
-                          ],
-                        ),
-                      ),
+              child: (_priorTurns.isEmpty && _lastUserText == null && _crisisMessage == null)
+                  ? const Center(child: AvatarView(avatarState: 'IDLE'))
+                  : ListView(
+                      controller: _scrollController,
+                      children: [
+                        // Recent turns of this topic (same window replayed
+                        // to Claude as context), so switching tabs or
+                        // sending a few messages in a row doesn't leave
+                        // earlier replies visible only from History.
+                        for (final turn in _priorTurns) ConversationTurnTile(turn: turn),
+                        if (_priorTurns.isNotEmpty) const Divider(height: 24),
+                        _buildLiveExchange(context, response),
+                      ],
                     ),
-                  );
-                },
-              ),
             ),
             // Manual tap rather than auto-play: iOS Safari only allows
             // speech synthesis triggered directly by a user gesture, and

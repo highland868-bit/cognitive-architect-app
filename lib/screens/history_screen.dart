@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/conversation_log_service.dart';
 import '../widgets/agent_drawer.dart';
+import '../widgets/conversation_turn_tile.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -71,7 +72,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   '${group.value.length} exchange${group.value.length == 1 ? '' : 's'}',
                 ),
                 children: [
-                  for (final turn in group.value.reversed) _TurnTile(turn: turn),
+                  for (final turn in group.value.reversed) ConversationTurnTile(turn: turn),
                 ],
               );
             },
@@ -82,88 +83,3 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 }
 
-class _TurnTile extends StatelessWidget {
-  const _TurnTile({required this.turn});
-
-  final ConversationTurn turn;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (turn.user != null)
-            _Bubble(role: 'You', text: turn.user!.text, timestamp: turn.user!.timestamp, alignRight: true),
-          if (turn.assistant != null)
-            _Bubble(
-              role: _labelFor(turn.assistant!.agent),
-              text: turn.assistant!.text,
-              timestamp: turn.assistant!.timestamp,
-              alignRight: false,
-            ),
-          const Divider(height: 16),
-        ],
-      ),
-    );
-  }
-
-  String _labelFor(String? agent) {
-    if (agent == null) return 'Agent';
-    if (agent == 'SENTINEL') return 'Safety check-in';
-    final match = agentOptions.where((a) => a.id == agent);
-    return match.isNotEmpty ? match.first.label : agent;
-  }
-}
-
-class _Bubble extends StatelessWidget {
-  const _Bubble({
-    required this.role,
-    required this.text,
-    required this.timestamp,
-    required this.alignRight,
-  });
-
-  final String role;
-  final String text;
-  final DateTime timestamp;
-  final bool alignRight;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Align(
-      alignment: alignRight ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.all(10),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-        decoration: BoxDecoration(
-          color: alignRight ? colorScheme.primaryContainer : colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(role, style: Theme.of(context).textTheme.labelSmall),
-            const SizedBox(height: 4),
-            SelectableText(text),
-            const SizedBox(height: 4),
-            Text(
-              _formatTime(timestamp),
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colorScheme.outline),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _formatTime(DateTime t) {
-    final local = t.toLocal();
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${local.month}/${local.day} ${two(local.hour)}:${two(local.minute)}';
-  }
-}
